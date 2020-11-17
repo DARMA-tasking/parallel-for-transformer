@@ -47,8 +47,6 @@ StatementMatcher CallMatcher =
     )
   ).bind("callExpr");
 
-//callExpr().bind("callExpr");
-
 struct ParallelForRewriter : MatchFinder::MatchCallback {
   explicit ParallelForRewriter(Rewriter& in_rw)
     : rw(in_rw)
@@ -59,12 +57,19 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
 
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr")) {
       fmt::print(
-        "Traversing function \"{}\"\n",
-        ce->getDirectCallee()->getNameInfo().getAsString()
+        "Traversing function \"{}\" ptr={}\n",
+        ce->getDirectCallee()->getNameInfo().getAsString(),
+        static_cast<void const*>(ce)
       );
       ce->dumpPretty(ce->getDirectCallee()->getASTContext());
       fmt::print("\n");
       ce->dumpColor();
+
+      auto loc = ce->getLocEnd();
+      int offset = Lexer::MeasureTokenLength(loc, rw.getSourceMgr(), rw.getLangOpts()) + 1;
+
+      SourceLocation loc2 = loc.getLocWithOffset(offset);
+      rw.InsertText(loc2, "\n/* inserting fence here */", true, true);
     } else {
       fmt::print(stderr, "traversing something unknown?\n");
       exit(1);
