@@ -62,6 +62,8 @@
 #include <list>
 #include <tuple>
 #include <regex>
+#include <set>
+#include <fstream>
 
 using namespace clang;
 using namespace clang::tooling;
@@ -72,11 +74,16 @@ static FILE* out = nullptr;
 
 static cl::opt<std::string> Filename("o", cl::desc("Filename to output generated code"));
 
+static cl::opt<std::string> Processed("x", cl::desc("Database of processed files"));
+
 static cl::opt<std::string> Matcher("f", cl::desc("Only transform filenames matching this pattern"));
 
 static cl::list<std::string> Includes("I", cl::desc("Include directories"), cl::ZeroOrMore);
 
 static cl::opt<bool> GenerateInline("inline", cl::desc("Generate code inline and modify files"));
+
+static std::set<std::string> new_processed_files;
+static std::set<std::string> processed_files;
 
 StatementMatcher CallMatcher =
   callExpr(
@@ -110,6 +117,13 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
           // break out and ignore this file
           return;
         }
+
+        if (processed_files.find(file.str()) != processed_files.end()) {
+          fmt::print("already generated for filename={}\n", file.str());
+          return;
+        }
+
+        new_processed_files.insert(file.str());
       }
 
       fmt::print(
@@ -208,6 +222,17 @@ int main(int argc, const char **argv) {
     out = fopen(Filename.c_str(), "w");
   }
 
+  if (Processed != "") {
+    std::ifstream file(Processed);
+    if (file.good()) {
+      std::string line;
+      while (std::getline(file, line)) {
+        processed_files.insert(line);
+      }
+      file.close();
+    }
+  }
+
   for (auto&& e : Includes) {
     auto str = std::string("-I") + e;
     ArgumentsAdjuster ad1 = getInsertArgumentAdjuster(str.c_str());
@@ -220,5 +245,17 @@ int main(int argc, const char **argv) {
   if (Filename == "" and out != nullptr) {
     fclose(out);
   }
+
+  if (Processed != "") {
+    std::ofstream file(Processed);
+    for (auto&& elm : new_processed_files) {
+      file << elm << "\n";
+    }
+    for (auto&& elm : processed_files) {
+      file << elm << "\n";
+    }
+    file.close();
+  };
+
   return 0;
 }
