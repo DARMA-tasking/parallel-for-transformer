@@ -7,9 +7,9 @@ build_dir=${2}
 
 export CH=${source_dir}
 export CH_BUILD=${build_dir}/parallel-for-transformer
+rm -rf "$CH_BUILD"
 mkdir -p "$CH_BUILD"
 cd "$CH_BUILD"
-rm -Rf ./*
 
 target=install
 

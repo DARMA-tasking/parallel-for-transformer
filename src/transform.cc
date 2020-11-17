@@ -176,7 +176,7 @@ struct MyFrontendAction : ASTFrontendAction {
   CreateASTConsumer(CompilerInstance &CI, StringRef file) override {
     rw_.setSourceMgr(CI.getSourceManager(), CI.getLangOpts());
 
-    return llvm::make_unique<MyASTConsumer>(rw_);
+    return std::make_unique<MyASTConsumer>(rw_);
   }
 
 private:
