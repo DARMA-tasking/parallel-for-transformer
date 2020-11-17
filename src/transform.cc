@@ -102,7 +102,12 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
       fmt::print("\n");
       ce->dumpColor();
 
+#if CLANG5
       auto loc = ce->getLocEnd();
+#else
+      auto loc = ce->getEndLoc();
+#endif
+
       int offset = Lexer::MeasureTokenLength(loc, rw.getSourceMgr(), rw.getLangOpts()) + 1;
 
       SourceLocation loc2 = loc.getLocWithOffset(offset);
