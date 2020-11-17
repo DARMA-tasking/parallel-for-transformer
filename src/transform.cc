@@ -75,8 +75,8 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
 };
 
 struct MyASTConsumer : ASTConsumer {
-  MyASTConsumer(Rewriter& in_rw) : record_handler(in_rw) {
-    matcher_.addMatcher(CallMatcher, &record_handler);
+  MyASTConsumer(Rewriter& in_rw) : call_handler_(in_rw) {
+    matcher_.addMatcher(CallMatcher, &call_handler_);
   }
 
   void HandleTranslationUnit(ASTContext& Context) override {
@@ -85,7 +85,7 @@ struct MyASTConsumer : ASTConsumer {
   }
 
 private:
-  ParallelForRewriter record_handler;
+  ParallelForRewriter call_handler_;
   MatchFinder matcher_;
 };
 
