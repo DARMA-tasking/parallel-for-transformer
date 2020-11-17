@@ -56,17 +56,11 @@
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/AST/ExprCXX.h"
 
-// This moved in later versions of clang
-#include "clang/Tooling/Core/QualTypeNames.h"
-//#include "clang/AST/QualTypeNames.h"
-
 #include "fmt/format.h"
 
 #include <memory>
 #include <list>
 #include <tuple>
-
-#include "qualified_name.h"
 
 using namespace clang;
 using namespace clang::tooling;
