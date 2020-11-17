@@ -144,7 +144,7 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
       int offset = Lexer::MeasureTokenLength(loc, rw.getSourceMgr(), rw.getLangOpts()) + 1;
 
       SourceLocation loc2 = loc.getLocWithOffset(offset);
-      rw.InsertText(loc2, "\n/* inserting fence here */", true, true);
+      rw.InsertText(loc2, "\nKokkos::fence();", true, true);
     } else {
       fmt::print(stderr, "traversing something unknown?\n");
       exit(1);
