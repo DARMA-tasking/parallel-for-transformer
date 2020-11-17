@@ -61,6 +61,7 @@
 #include <memory>
 #include <list>
 #include <tuple>
+#include <regex>
 
 using namespace clang;
 using namespace clang::tooling;
@@ -70,6 +71,8 @@ using namespace llvm;
 static FILE* out = nullptr;
 
 static cl::opt<std::string> Filename("o", cl::desc("Filename to output generated code"));
+
+static cl::opt<std::string> Matcher("f", cl::desc("Only transform filenames matching this pattern"));
 
 static cl::list<std::string> Includes("I", cl::desc("Include directories"), cl::ZeroOrMore);
 
@@ -90,9 +93,25 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
   { }
 
   virtual void run(const MatchFinder::MatchResult &Result) {
-    fmt::print("=== Invoking rewriter on matched result ===\n");
-
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr")) {
+
+      // Only match files based on user's input
+      if (Matcher != "") {
+        auto file = rw.getSourceMgr().getFilename(ce->getEndLoc());
+
+        fmt::print("considering filename={}, regex={}\n", file.str(), Matcher);
+
+        std::regex re(Matcher);
+        std::cmatch m;
+        if (std::regex_match(file.str().c_str(), m, re)) {
+          fmt::print("=== Invoking rewriter on matched result in {} ===\n", file.str());
+          // we need to process this match
+        } else {
+          // break out and ignore this file
+          return;
+        }
+      }
+
       fmt::print(
         "Traversing function \"{}\" ptr={}\n",
         ce->getDirectCallee()->getNameInfo().getAsString(),
