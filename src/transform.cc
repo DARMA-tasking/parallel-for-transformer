@@ -38,10 +38,6 @@ static cl::list<std::string> Includes("I", cl::desc("Include directories"), cl::
 
 static cl::opt<bool> GenerateInline("inline", cl::desc("Generate code inline and modify files"));
 
-static cl::opt<bool> OutputMainFile("main", cl::desc("Output main file with generated code"));
-
-static cl::opt<bool> IncludeVTHeader("Ivt", cl::desc("Include VT headers in generated code"));
-
 StatementMatcher CallMatcher =
   callExpr(
     callee(
@@ -114,11 +110,6 @@ struct MyFrontendAction : ASTFrontendAction {
   CreateASTConsumer(CompilerInstance &CI, StringRef file) override {
     rw_.setSourceMgr(CI.getSourceManager(), CI.getLangOpts());
 
-    if (OutputMainFile) {
-      auto buf = rw_.getSourceMgr().getBufferData(rw_.getSourceMgr().getMainFileID());
-      fmt::print(out, "{}", buf.str());
-    }
-
     return llvm::make_unique<MyASTConsumer>(rw_);
   }
 
@@ -150,10 +141,6 @@ int main(int argc, const char **argv) {
   } else {
     out = fopen(Filename.c_str(), "w");
   }
-
-  // if (IncludeVTHeader) {
-  //   fprintf(out, "#include <vt/transport.h>\n");
-  // }
 
   for (auto&& e : Includes) {
     auto str = std::string("-I") + e;
