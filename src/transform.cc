@@ -94,6 +94,111 @@ StatementMatcher CallMatcher =
     )
   ).bind("callExpr");
 
+StatementMatcher FenceMatcher =
+  callExpr(
+    callee(
+      functionDecl(
+        hasName("::Kokkos::fence")
+      )
+    )
+  ).bind("fenceExpr");
+
+struct FenceCallback : MatchFinder::MatchCallback {
+  virtual void run(const MatchFinder::MatchResult &Result) {
+    if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("fenceExpr")) {
+      found = true;
+    }
+  }
+  bool found = false;
+};
+
+template <typename T>
+auto getBegin(T const& t) {
+#if LLVM_VERSION_MAJOR > 7
+  return t->getBeginLoc();
+#else
+  return t->getBeginLoc();
+#endif
+}
+
+template <typename T>
+auto getEnd(T const& t) {
+#if LLVM_VERSION_MAJOR > 7
+  return t->getEndLoc();
+#else
+  return t->getLocEnd();
+#endif
+}
+
+struct RewriteBlocking {
+  explicit RewriteBlocking(Rewriter& in_rw)
+    : rw(in_rw)
+  { }
+
+  void operator()(CallExpr const* par, CallExpr const* fence) const {
+    // Change the namespace
+    {
+      auto begin = getBegin(par);
+
+      auto str = rw.getRewrittenText(SourceRange(begin, begin.getLocWithOffset(6)));
+      fmt::print("str={}\n", str);
+      if (str == "Kokkos::") {
+        rw.ReplaceText(begin, 6, "empire");
+      } else {
+        rw.InsertTextBefore(begin, "empire::");
+      }
+    }
+
+    // Switch to parallel_* blocking
+    {
+      auto end = getEnd(par->getCallee());
+      rw.InsertTextAfterToken(end, "_blocking");
+    }
+
+    // Remove the fence line
+    {
+      auto begin = getBegin(fence);
+      auto end = getEnd(fence);
+      typename Rewriter::RewriteOptions ro;
+      ro.RemoveLineIfEmpty = true;
+      rw.RemoveText(SourceRange{begin, end.getLocWithOffset(1)}, ro);
+    }
+  }
+
+private:
+  Rewriter& rw;
+};
+
+struct RewriteAsync {
+  explicit RewriteAsync(Rewriter& in_rw)
+    : rw(in_rw)
+  { }
+
+  void operator()(CallExpr const* par) const {
+    // Change the namespace
+    {
+      auto begin = getBegin(par);
+
+      auto str = rw.getRewrittenText(SourceRange(begin, begin.getLocWithOffset(6)));
+      fmt::print("str={}\n", str);
+      if (str == "Kokkos::") {
+        rw.ReplaceText(begin, 6, "empire");
+      } else {
+        rw.InsertTextBefore(begin, "empire::");
+      }
+    }
+
+    // Switch to parallel_* async
+    {
+      auto end = getEnd(par->getCallee());
+      rw.InsertTextAfterToken(end, "_async");
+    }
+  }
+
+private:
+  Rewriter& rw;
+};
+
 struct ParallelForRewriter : MatchFinder::MatchCallback {
   explicit ParallelForRewriter(Rewriter& in_rw)
     : rw(in_rw)
@@ -102,52 +207,106 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
   virtual void run(const MatchFinder::MatchResult &Result) {
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr")) {
 
-      // Only match files based on user's input
-      if (Matcher != "") {
-        auto file = rw.getSourceMgr().getFilename(ce->getEndLoc());
+      auto& ctx = Result.Context;
+      auto p = ctx->getParents(*ce);
+      fmt::print("size={}\n", p.size());
 
-        fmt::print("considering filename={}, regex={}\n", file.str(), Matcher);
-
-        std::regex re(Matcher);
-        std::cmatch m;
-        if (std::regex_match(file.str().c_str(), m, re)) {
-          fmt::print("=== Invoking rewriter on matched result in {} ===\n", file.str());
-          // we need to process this match
-        } else {
-          // break out and ignore this file
-          return;
-        }
-
-        if (processed_files.find(file.str()) != processed_files.end()) {
-          fmt::print("already generated for filename={}\n", file.str());
-          return;
-        }
-
-        new_processed_files.insert(file.str());
+      if (p.size() != 1) {
+        return;
       }
 
-      fmt::print(
-        "Traversing function \"{}\" ptr={}\n",
-        ce->getDirectCallee()->getNameInfo().getAsString(),
-        static_cast<void const*>(ce)
-      );
-      ce->dumpPretty(ce->getDirectCallee()->getASTContext());
-      fmt::print("\n");
-      ce->dumpColor();
+      bool found_fence = false;
+      CallExpr const* fence = nullptr;
+      for (std::size_t i = 0; i < p.size(); i++) {
+        Stmt const* st = p[i].get<Stmt>();
+        //st->dumpColor();
+        if (isa<CompoundStmt>(st)) {
+          auto const& cs = cast<CompoundStmt>(st);
+          for (auto iter = cs->child_begin(); iter != cs->child_end(); ++iter) {
+            if (*iter == ce) {
+              iter++;
+              if (iter != cs->child_end()) {
+                MatchFinder fence_matcher;
+                auto fc = std::make_unique<FenceCallback>();
+                fence_matcher.addMatcher(FenceMatcher, fc.get());
+                fence_matcher.match(**iter, *Result.Context);
+                found_fence = fc->found;
+                if (fc->found) {
+                  fence = cast<CallExpr>(*iter);
+                  ///fence = *iter;
+                  fmt::print("FOUND fence\n");
+                } else {
+                  fmt::print("NOT FOUND fence\n");
+                }
 
-#if CLANG5
-      auto loc = ce->getLocEnd();
-#else
-      auto loc = ce->getEndLoc();
-#endif
+              }
+            }
+          }
+        }
 
-      int offset = Lexer::MeasureTokenLength(loc, rw.getSourceMgr(), rw.getLangOpts()) + 1;
+        break;
+      }
 
-      SourceLocation loc2 = loc.getLocWithOffset(offset);
-      rw.InsertText(loc2, "\nKokkos::fence();", true, true);
-    } else {
-      fmt::print(stderr, "traversing something unknown?\n");
-      exit(1);
+      if (found_fence) {
+        // rewrite to blocking with empire
+        auto rb = std::make_unique<RewriteBlocking>(rw);
+        rb->operator()(ce, fence);
+      } else {
+        // rewrite to async with empire
+        auto ra = std::make_unique<RewriteAsync>(rw);
+        ra->operator()(ce);
+      }
+
+//       // Only match files based on user's input
+//       if (Matcher != "") {
+// #if LLVM_VERSION_MAJOR > 7
+//         auto file = rw.getSourceMgr().getFilename(ce->getEndLoc());
+// #else
+//         auto file = rw.getSourceMgr().getFilename(ce->getLocEnd());
+// #endif
+//         fmt::print("considering filename={}, regex={}\n", file.str(), Matcher);
+
+//         std::regex re(Matcher);
+//         std::cmatch m;
+//         if (std::regex_match(file.str().c_str(), m, re)) {
+//           fmt::print("=== Invoking rewriter on matched result in {} ===\n", file.str());
+//           // we need to process this match
+//         } else {
+//           // break out and ignore this file
+//           return;
+//         }
+
+//         if (processed_files.find(file.str()) != processed_files.end()) {
+//           fmt::print("already generated for filename={}\n", file.str());
+//           return;
+//         }
+
+//         new_processed_files.insert(file.str());
+//       }
+
+//       fmt::print(
+//         "Traversing function \"{}\" ptr={}\n",
+//         ce->getDirectCallee()->getNameInfo().getAsString(),
+//         static_cast<void const*>(ce)
+//       );
+//       ce->dumpPretty(ce->getDirectCallee()->getASTContext());
+//       fmt::print("\n");
+//       ce->dumpColor();
+
+// #if LLVM_VERSION_MAJOR > 7
+//       auto loc = ce->getEndLoc();
+// #else
+//       auto loc = ce->getLocEnd();
+// #endif
+
+//       int offset = Lexer::MeasureTokenLength(loc, rw.getSourceMgr(), rw.getLangOpts()) + 1;
+
+//       SourceLocation loc2 = loc.getLocWithOffset(offset);
+//       rw.InsertText(loc2, "\nKokkos::fence();", true, true);
+//     } else {
+//       fmt::print(stderr, "traversing something unknown?\n");
+//       exit(1);
+//     }
     }
   }
 
