@@ -154,7 +154,11 @@ struct RewriteArgument {
       policy_type.getAsString() == "std::size_t" or
       policy_type.getAsString() == "int" or
       policy_type.getAsString() == "long" or
-      policy_type.getAsString() == "const long"
+      policy_type.getAsString() == "const long" or
+      policy_type.getAsString() == "const size_t" or
+      policy_type.getAsString() == "const int" or
+      policy_type.getAsString() == "const unsigned long" or
+      policy_type.getAsString() == "const empire::LocalOrdinal"
     ) {
       fmt::print("range is a basic policy={}\n", policy_type.getAsString());
     } else {
@@ -162,40 +166,44 @@ struct RewriteArgument {
       fmt::print("range is advanced policy\n");
       //policy_type.dump();
       auto str = policy_type.getAsString();
-      if (str.substr(0, 6) == "class ") {
-        auto t = str.substr(6, str.size()-1);
-        std::string main_type = "";
-        std::string temp_type = "";
-        for (std::size_t i = 0; i < t.size(); i++) {
-          if (t[i] == '<') {
-            main_type = t.substr(0, i);
-            temp_type = t.substr(i+1, t.size()-i-2);
-          }
-        }
-
-        if (main_type == "") {
-          main_type = t;
-        }
-
-        fmt::print("MAIN: {}\n", main_type);
-        fmt::print("TEMP: {}\n", temp_type);
-
-        auto begin = getBegin(policy);
-        //auto end = getEnd(policy->getType());
-
-        std::string new_type = "";
-        if (temp_type == "") {
-          new_type = fmt::format("buildKokkosPolicy<{}>", main_type);
-        } else {
-          new_type = fmt::format("buildKokkosPolicy<{}, {}>", main_type, temp_type);
-        }
-        fmt::print("new type={}\n", new_type);
-        rw.ReplaceText(begin, str.size()-6, new_type);
-
-      } else {
-        fmt::print("failure to parse template\n");
-        exit(1);
+      if (str.substr(0, 6) == "const ") {
+        str = str.substr(6, str.size()-1);
       }
+      if (str.substr(0, 6) == "class ") {
+        str = str.substr(6, str.size()-1);
+      }
+      if (str.substr(0, 7) == "struct ") {
+        str = str.substr(7, str.size()-1);
+      }
+
+      auto t = str;
+      std::string main_type = "";
+      std::string temp_type = "";
+      for (std::size_t i = 0; i < t.size(); i++) {
+        if (t[i] == '<') {
+          main_type = t.substr(0, i);
+          temp_type = t.substr(i+1, t.size()-i-2);
+        }
+      }
+
+      if (main_type == "") {
+        main_type = t;
+      }
+
+      fmt::print("MAIN: {}\n", main_type);
+      fmt::print("TEMP: {}\n", temp_type);
+
+      auto begin = getBegin(policy);
+      //auto end = getEnd(policy->getType());
+
+      std::string new_type = "";
+      if (temp_type == "") {
+        new_type = fmt::format("buildKokkosPolicy<{}>", main_type);
+      } else {
+        new_type = fmt::format("buildKokkosPolicy<{}, {}>", main_type, temp_type);
+      }
+      fmt::print("new type={}\n", new_type);
+      rw.ReplaceText(begin, str.size()-6, new_type);
     }
   }
 
