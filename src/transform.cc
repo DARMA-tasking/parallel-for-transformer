@@ -141,7 +141,7 @@ struct RewriteArgument {
     auto const& first_arg = *arg_iter;
     QualType const& type = first_arg->getType();
     // fmt::print("type={}\n", type.getAsString());
-    if (type.getAsString() == "std::string") {
+    if (type.getAsString() == "std::string" or type.getAsString() == "const std::string") {
       // fmt::print("first argument is string\n");
       first_is_string = true;
       arg_iter++;
