@@ -165,15 +165,21 @@ struct RewriteArgument {
       // advanced policy must lift to builder
       fmt::print("range is advanced policy\n");
       //policy_type.dump();
-      auto str = policy_type.getAsString();
+      int offset = 0;
+      PrintingPolicy p(LangOptions{});
+      p.SuppressTagKeyword = true;
+      auto str = policy_type.getAsString(p);
       if (str.substr(0, 6) == "const ") {
         str = str.substr(6, str.size()-1);
+        offset += 6;
       }
       if (str.substr(0, 6) == "class ") {
         str = str.substr(6, str.size()-1);
+        offset += 6;
       }
       if (str.substr(0, 7) == "struct ") {
         str = str.substr(7, str.size()-1);
+        offset += 7;
       }
 
       auto t = str;
@@ -203,7 +209,7 @@ struct RewriteArgument {
         new_type = fmt::format("buildKokkosPolicy<{}, {}>", main_type, temp_type);
       }
       fmt::print("new type={}\n", new_type);
-      rw.ReplaceText(begin, str.size()-6, new_type);
+      rw.ReplaceText(begin, t.size(), new_type);
     }
   }
 
