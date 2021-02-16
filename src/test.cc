@@ -34,7 +34,7 @@ class Device {};
 }
 
 void test3() {
-  empire::parallel_for_async("test-123", buildKokkosPolicy<Kokkos::RangePolicy, int, float>(1000));
+  Kokkos::parallel_for("test-123", Kokkos::RangePolicy<int, float>(1000));
 }
 
 void test() {
@@ -42,7 +42,8 @@ void test() {
   while (true) {
     int x = 10;
     if (true) x=5;
-    empire::parallel_for_blocking("80", 90);
+    Kokkos::parallel_for("80", 90);
+    Kokkos::fence();
     if (false) x=6;
   }
 }
@@ -57,15 +58,17 @@ template <typename T>
 void test4() {
   using Size = size_t;
 
-  empire::parallel_for_blocking("10", 20);
+  Kokkos::parallel_for("10", 20);
+  Kokkos::fence();
 
   X S_values;
 
-  empire::parallel_for_blocking("hello", buildKokkosPolicy<Kokkos::RangePolicy, PHX::Device>(0,S_values.extent(0)),
+  Kokkos::parallel_for("hello", Kokkos::RangePolicy<PHX::Device>(0,S_values.extent(0)),
   KOKKOS_LAMBDA (const Size& n)
   {
     return n+1;
   });
+  Kokkos::fence();
 }
 
 void test2() {
@@ -74,14 +77,17 @@ void test2() {
   test4<long>();
 
   if (true) {
-    empire::parallel_for_blocking("10", 20);
-    empire::parallel_scan_blocking("10", 20);
+    Kokkos::parallel_for("10", 20);
+    Kokkos::fence();
+    Kokkos::parallel_scan("10", 20);
+    Kokkos::fence();
   }
   if (true) {
-    empire::parallel_for_blocking(40);
+    Kokkos::parallel_for(40);
+    Kokkos::fence();
   }
   if (true) {
-    empire::parallel_for_async("1219", 23);
+    Kokkos::parallel_for("1219", 23);
     test();
   }
 
