@@ -318,6 +318,11 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
 
     new_processed_files.insert(file.str());
 
+    if (locs.find(getBegin(ce_outer)) != locs.end()) {
+      return;
+    }
+    locs.insert(getBegin(ce_outer));
+
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("fenceExpr")) {
       auto begin = getBegin(ce);
 
@@ -395,6 +400,7 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
     }
   }
 
+  std::set<SourceLocation> locs;
   Rewriter& rw;
 };
 

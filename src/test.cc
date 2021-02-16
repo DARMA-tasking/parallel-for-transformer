@@ -41,7 +41,17 @@ void test() {
   }
 }
 
+template <typename T>
+void test4() {
+  Kokkos::parallel_for("10", 20);
+  Kokkos::fence();
+}
+
 void test2() {
+  test4<int>();
+  test4<float>();
+  test4<long>();
+
   if (true) {
     Kokkos::parallel_for("10", 20);
     Kokkos::fence();
