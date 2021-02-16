@@ -152,7 +152,9 @@ struct RewriteArgument {
     if (
       policy_type.getAsString() == "size_t" or
       policy_type.getAsString() == "std::size_t" or
-      policy_type.getAsString() == "int"
+      policy_type.getAsString() == "int" or
+      policy_type.getAsString() == "long" or
+      policy_type.getAsString() == "const long"
     ) {
       fmt::print("range is a basic policy={}\n", policy_type.getAsString());
     } else {
