@@ -276,6 +276,38 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
   { }
 
   virtual void run(const MatchFinder::MatchResult &Result) {
+
+    CallExpr const *ce_outer = nullptr;
+    ce_outer = Result.Nodes.getNodeAs<clang::CallExpr>("fenceExpr");
+    if (!ce_outer) {
+      ce_outer = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr");
+    }
+
+    if (!ce_outer) {
+      return;
+    }
+
+    auto file = rw.getSourceMgr().getFilename(getEnd(ce_outer));
+
+    fmt::print("considering filename={}, regex={}\n", file.str(), Matcher);
+
+    std::regex re(Matcher);
+    std::cmatch m;
+    if (std::regex_match(file.str().c_str(), m, re)) {
+      fmt::print("=== Invoking rewriter on matched result in {} ===\n", file.str());
+      // we need to process this match
+    } else {
+      // break out and ignore this file
+      return;
+    }
+
+    if (processed_files.find(file.str()) != processed_files.end()) {
+      fmt::print("already generated for filename={}\n", file.str());
+      return;
+    }
+
+    new_processed_files.insert(file.str());
+
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("fenceExpr")) {
       auto begin = getBegin(ce);
 
