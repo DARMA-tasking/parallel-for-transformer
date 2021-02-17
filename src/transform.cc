@@ -217,9 +217,9 @@ struct RewriteArgument {
 
       std::string new_type = "";
       if (temp_type == "") {
-        new_type = fmt::format("buildKokkosPolicy<{}>", main_type);
+        new_type = fmt::format("empire::buildKokkosPolicy<{}>", main_type);
       } else {
-        new_type = fmt::format("buildKokkosPolicy<{}, {}>", main_type, temp_type);
+        new_type = fmt::format("empire::buildKokkosPolicy<{}, {}>", main_type, temp_type);
       }
       fmt::print("new type={}\n", new_type);
 
