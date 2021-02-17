@@ -135,7 +135,7 @@ struct RewriteArgument {
     : rw(in_rw)
   { }
 
-  void operator()(CallExpr const* par) const {
+  void operator()(CallExpr const* par, SourceManager const* sm) const {
     bool first_is_string = false;
     auto arg_iter = par->arg_begin();
     auto const& first_arg = *arg_iter;
@@ -168,6 +168,12 @@ struct RewriteArgument {
       int offset = 0;
       PrintingPolicy p(LangOptions{});
       p.SuppressTagKeyword = true;
+      //
+      // unfortunately, this doesn't exist in Clang 7-9. it's introduced a lot
+      // later in clang 13?
+      //
+      // p.SplitTemplateClosers = false;
+      //
       auto str = policy_type.getAsString(p);
       if (str.substr(0, 6) == "const ") {
         str = str.substr(6, str.size()-1);
@@ -189,6 +195,7 @@ struct RewriteArgument {
         if (t[i] == '<') {
           main_type = t.substr(0, i);
           temp_type = t.substr(i+1, t.size()-i-2);
+          break;
         }
       }
 
@@ -196,11 +203,17 @@ struct RewriteArgument {
         main_type = t;
       }
 
+      temp_type = replaceSpacedTemplates(temp_type);
+
+      while (temp_type.size() > 0 and temp_type[temp_type.size()-1] == ' ') {
+        temp_type = temp_type.substr(0, temp_type.size()-1);
+      }
+
       fmt::print("MAIN: {}\n", main_type);
       fmt::print("TEMP: {}\n", temp_type);
 
       auto begin = getBegin(policy);
-      //auto end = getEnd(policy->getType());
+      policy->dumpColor();
 
       std::string new_type = "";
       if (temp_type == "") {
@@ -209,8 +222,29 @@ struct RewriteArgument {
         new_type = fmt::format("buildKokkosPolicy<{}, {}>", main_type, temp_type);
       }
       fmt::print("new type={}\n", new_type);
-      rw.ReplaceText(begin, t.size(), new_type);
+
+      char const* ci = sm->getCharacterData(begin);
+      char const* c = ci;
+      while (*c != '(') {
+        c++;
+      }
+      auto end = c - ci;
+
+      rw.ReplaceText(begin, end, new_type);
     }
+  }
+
+  std::string replaceSpacedTemplates(std::string in) const {
+    for (size_t i = 0; i < in.size(); i++) {
+      auto sub = in.substr(i, std::string::npos);
+      if (sub.size() >= 3) {
+        if (sub.substr(0, 3) == "> >") {
+          in.replace(i, 3, ">>");
+          return replaceSpacedTemplates(in);
+        }
+      }
+    }
+    return in;
   }
 
 private:
@@ -392,7 +426,7 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
       }
 
       auto rr = std::make_unique<RewriteArgument>(rw);
-      rr->operator()(ce);
+      rr->operator()(ce, Result.SourceManager);
 
       if (found_fence) {
         // rewrite to blocking with empire

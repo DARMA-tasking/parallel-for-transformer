@@ -27,6 +27,10 @@ void parallel_scan(std::string str, size_t j) { }
 void parallel_scan(size_t i) { }
 void fence() { }
 
+template <typename T>
+class Schedule {};
+class Dynamic {};
+
 }
 
 namespace PHX {
@@ -63,11 +67,19 @@ void test4() {
 
   X S_values;
 
-  Kokkos::parallel_for("hello", Kokkos::RangePolicy<PHX::Device>(0,S_values.extent(0)),
+  Kokkos::parallel_for("hello", Kokkos::RangePolicy< PHX::Device >(0,S_values.extent(0)),
   KOKKOS_LAMBDA (const Size& n)
   {
     return n+1;
   });
+  Kokkos::fence();
+
+  using DeviceSpace = PHX::Device;
+
+  size_t N = 0;
+
+  Kokkos::parallel_for ("", Kokkos::RangePolicy<DeviceSpace,Kokkos::Schedule<Kokkos::Schedule<Kokkos::Dynamic>>>(0,N-2),
+  []{});
   Kokkos::fence();
 }
 
