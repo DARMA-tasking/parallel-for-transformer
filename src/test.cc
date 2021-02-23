@@ -39,6 +39,9 @@ class Device {};
 
 void test3() {
   Kokkos::parallel_for("test-123", Kokkos::RangePolicy<int, float>(1000));
+
+  Kokkos::RangePolicy<int, float> policy{1000};
+  Kokkos::parallel_for("test-123", policy);
 }
 
 void test() {

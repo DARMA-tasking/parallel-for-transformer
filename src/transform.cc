@@ -103,9 +103,20 @@ StatementMatcher FenceMatcher =
     )
   ).bind("fenceExpr");
 
+StatementMatcher TemporaryMatcher = cxxTemporaryObjectExpr().bind("tempExpr");
+
 struct FenceCallback : MatchFinder::MatchCallback {
   virtual void run(const MatchFinder::MatchResult &Result) {
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("fenceExpr")) {
+      found = true;
+    }
+  }
+  bool found = false;
+};
+
+struct TempCallback : MatchFinder::MatchCallback {
+  virtual void run(const MatchFinder::MatchResult &Result) {
+    if (Result.Nodes.getNodeAs<clang::CXXTemporaryObjectExpr>("tempExpr")) {
       found = true;
     }
   }
@@ -135,7 +146,10 @@ struct RewriteArgument {
     : rw(in_rw)
   { }
 
-  void operator()(CallExpr const* par, SourceManager const* sm) const {
+  void operator()(
+    CallExpr const* par, SourceManager const* sm,
+    MatchFinder::MatchResult const& Result
+  ) const {
     bool first_is_string = false;
     auto arg_iter = par->arg_begin();
     auto const& first_arg = *arg_iter;
@@ -164,7 +178,17 @@ struct RewriteArgument {
     } else {
       // advanced policy must lift to builder
       fmt::print("range is advanced policy\n");
-      //policy_type.dump();
+
+      MatchFinder temp_matcher;
+      auto tc = std::make_unique<TempCallback>();
+      temp_matcher.addMatcher(TemporaryMatcher, tc.get());
+      temp_matcher.match(*policy, *Result.Context);
+
+      if (not tc->found) {
+        return;
+      }
+
+      policy->dumpColor();
       int offset = 0;
       PrintingPolicy p(LangOptions{});
       p.SuppressTagKeyword = true;
@@ -213,7 +237,7 @@ struct RewriteArgument {
       fmt::print("TEMP: {}\n", temp_type);
 
       auto begin = getBegin(policy);
-      policy->dumpColor();
+      //policy->dumpColor();
 
       std::string new_type = "";
       if (temp_type == "") {
@@ -400,7 +424,12 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
           if (cs->size() == 1) {
             break;
           }
+          int x = 0;
           for (auto iter = cs->child_begin(); iter != cs->child_end(); ++iter) {
+            x++;
+            if (x > cs->size()) {
+              goto out;
+            }
             if (*iter == ce or *iter == ewc) {
               iter++;
               if (iter != cs->child_end()) {
@@ -425,8 +454,10 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
         break;
       }
 
+    out:
+
       auto rr = std::make_unique<RewriteArgument>(rw);
-      rr->operator()(ce, Result.SourceManager);
+      rr->operator()(ce, Result.SourceManager, Result);
 
       if (found_fence) {
         // rewrite to blocking with empire
