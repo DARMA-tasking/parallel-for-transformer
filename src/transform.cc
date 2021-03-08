@@ -89,7 +89,7 @@ StatementMatcher CallMatcher =
   callExpr(
     callee(
       functionDecl(
-        matchesName("::Kokkos::parallel_*") // hasName("::Kokkos::parallel_for")
+        matchesName("::empire::parallel_*") // hasName("::Kokkos::parallel_for")
       )
     )
   ).bind("callExpr");
@@ -275,6 +275,36 @@ private:
   Rewriter& rw;
 };
 
+
+struct RewriteArgumentString {
+  explicit RewriteArgumentString(Rewriter& in_rw)
+    : rw(in_rw)
+  { }
+
+  void operator()(
+    CallExpr const* par, SourceManager const* sm,
+    MatchFinder::MatchResult const& Result
+  ) const {
+    auto arg_iter = par->arg_begin();
+    auto const& first_arg = *arg_iter;
+    QualType const& type = first_arg->getType();
+    fmt::print("type={}\n", type.getAsString());
+    if (type.getAsString() == "std::string" or
+        type.getAsString() == "const std::string" or
+        type.getAsString() == "char *" or
+        type.getAsString() == "char const *" or
+        type.getAsString() == "const char *") {
+      fmt::print("first argument is string\n");
+      return;
+    } else {
+      rw.InsertTextBefore(getBegin(first_arg), "\"PLEASE-ADD\", ");
+    }
+  }
+
+private:
+  Rewriter& rw;
+};
+
 struct RewriteBlocking {
   explicit RewriteBlocking(Rewriter& in_rw)
     : rw(in_rw)
@@ -397,6 +427,7 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
       }
     }
 
+#if 0
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr")) {
 
       auto& ctx = Result.Context;
@@ -469,6 +500,18 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
         ra->operator()(ce);
       }
     }
+
+#else
+
+    if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr")) {
+
+      auto rr = std::make_unique<RewriteArgumentString>(rw);
+      rr->operator()(ce, Result.SourceManager, Result);
+
+    }
+
+#endif
+
   }
 
   std::set<SourceLocation> locs;
