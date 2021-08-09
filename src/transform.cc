@@ -89,7 +89,7 @@ StatementMatcher CallMatcher =
   callExpr(
     callee(
       functionDecl(
-        matchesName("::empire::parallel_*") // hasName("::Kokkos::parallel_for")
+        matchesName("::Kokkos::parallel_*") // hasName("::Kokkos::parallel_for")
       )
     )
   ).bind("callExpr");
@@ -185,6 +185,7 @@ struct RewriteArgument {
       temp_matcher.match(*policy, *Result.Context);
 
       if (not tc->found) {
+	fmt::print("advanced policy--not-found\n");
         return;
       }
 
@@ -427,7 +428,7 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
       }
     }
 
-#if 0
+#if 1
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr")) {
 
       auto& ctx = Result.Context;
