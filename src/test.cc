@@ -1,6 +1,8 @@
 
 #include <cstddef>
 
+namespace {
+
 namespace std {
 struct string {
   string(char const* str) {}
@@ -144,4 +146,6 @@ int main2() {
   test();
   test2();
   return 0;
+}
+
 }
