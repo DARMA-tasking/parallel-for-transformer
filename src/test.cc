@@ -22,6 +22,13 @@ class Dynamic {};
 
 void fence() { }
 
+template <typename Policy, typename Func>
+void parallel_for(Policy i, Func j) { }
+
+template <typename Policy, typename Func>
+void parallel_scan(Policy i, Func j) { }
+
+
 }
 
 namespace empire {
@@ -60,10 +67,10 @@ class Device {};
 }
 
 void test3() {
-  Kokkos::parallel_for("test-123", Kokkos::RangePolicy<int, float>(1000));
+  Kokkos::parallel_for(Kokkos::RangePolicy<int, float>(1000), []{});
 
   Kokkos::RangePolicy<int, float> policy{1000};
-  Kokkos::parallel_for("test-123", policy);
+  Kokkos::parallel_for(policy, []{});
 }
 
 void test() {
@@ -71,7 +78,7 @@ void test() {
   while (true) {
     int x = 10;
     if (true) x=5;
-    Kokkos::parallel_for("80", 90);
+    Kokkos::parallel_for(90, []{});
     Kokkos::fence();
     if (false) x=6;
   }
@@ -87,7 +94,7 @@ template <typename T>
 void test4() {
   using Size = size_t;
 
-  Kokkos::parallel_for("10", 20);
+  Kokkos::parallel_for(20, []{});
   Kokkos::fence();
 
   X S_values;
@@ -103,7 +110,7 @@ void test4() {
 
   size_t N = 0;
 
-  Kokkos::parallel_for ("", Kokkos::RangePolicy<DeviceSpace,Kokkos::Schedule<Kokkos::Schedule<Kokkos::Dynamic>>>(0,N-2),
+  Kokkos::parallel_for (Kokkos::RangePolicy<DeviceSpace,Kokkos::Schedule<Kokkos::Schedule<Kokkos::Dynamic>>>(0,N-2),
   []{});
   Kokkos::fence();
 }
@@ -120,7 +127,7 @@ void test2() {
     Kokkos::fence();
   }
   if (true) {
-    Kokkos::parallel_for(40);
+    Kokkos::parallel_for(40, []{});
     Kokkos::fence();
   }
   if (true) {
