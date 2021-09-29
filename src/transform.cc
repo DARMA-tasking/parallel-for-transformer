@@ -84,6 +84,8 @@ static cl::opt<bool> DoFencesOnly("fence-only", cl::desc("Rewrite fences only"))
 
 static cl::opt<bool> RequireStrings("require-strings", cl::desc("Add strings to empire::parallel*"));
 
+static cl::opt<bool> DeepCopy("deep-copy", cl::desc("Transform Kokkos::deep_copy to empire::deep_copy"));
+
 static std::set<std::string> new_processed_files;
 static std::set<std::string> processed_files;
 
@@ -714,8 +716,9 @@ struct MyASTConsumer : ASTConsumer {
     } else {
       if (RequireStrings) {
         matcher_.addMatcher(EmpireCallMatcher, &call_handler_);
-      } else {
+      } else if (DeepCopy) {
         matcher_.addMatcher(DeepCopyMatcher, &deep_copy_handler_);
+      } else {
         matcher_.addMatcher(CallMatcher, &call_handler_);
       }
     }
