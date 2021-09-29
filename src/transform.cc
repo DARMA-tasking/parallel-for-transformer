@@ -82,6 +82,8 @@ static cl::list<std::string> Includes("I", cl::desc("Include directories"), cl::
 
 static cl::opt<bool> DoFencesOnly("fence-only", cl::desc("Rewrite fences only"));
 
+static cl::opt<bool> RequireStrings("require-strings", cl::desc("Add strings to empire::parallel*"));
+
 static std::set<std::string> new_processed_files;
 static std::set<std::string> processed_files;
 
@@ -90,6 +92,15 @@ StatementMatcher CallMatcher =
     callee(
       functionDecl(
         matchesName("::Kokkos::parallel_*") // hasName("::Kokkos::parallel_for")
+      )
+    )
+  ).bind("callExpr");
+
+StatementMatcher EmpireCallMatcher =
+  callExpr(
+    callee(
+      functionDecl(
+        matchesName("::empire::parallel_*") // hasName("::Kokkos::parallel_for")
       )
     )
   ).bind("callExpr");
@@ -103,8 +114,6 @@ StatementMatcher FenceMatcher =
     )
   ).bind("fenceExpr");
 
-StatementMatcher TemporaryMatcher = cxxTemporaryObjectExpr().bind("tempExpr");
-
 struct FenceCallback : MatchFinder::MatchCallback {
   virtual void run(const MatchFinder::MatchResult &Result) {
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("fenceExpr")) {
@@ -114,6 +123,8 @@ struct FenceCallback : MatchFinder::MatchCallback {
   bool found = false;
 };
 
+StatementMatcher TemporaryMatcher = cxxTemporaryObjectExpr().bind("tempExpr");
+
 struct TempCallback : MatchFinder::MatchCallback {
   virtual void run(const MatchFinder::MatchResult &Result) {
     if (Result.Nodes.getNodeAs<clang::CXXTemporaryObjectExpr>("tempExpr")) {
@@ -122,6 +133,58 @@ struct TempCallback : MatchFinder::MatchCallback {
   }
   bool found = false;
 };
+
+
+StatementMatcher DeclRefMatcher = hasDescendant(declRefExpr().bind("declRefExpr"));
+
+struct DeclRefCallback : MatchFinder::MatchCallback {
+  virtual void run(const MatchFinder::MatchResult &Result) {
+    if (Result.Nodes.getNodeAs<clang::DeclRefExpr>("declRefExpr")) {
+      expr = Result.Nodes.getNodeAs<clang::DeclRefExpr>("declRefExpr");
+      found = true;
+    }
+  }
+
+  DeclRefExpr const *expr = nullptr;
+  bool found = false;
+};
+
+DeclarationMatcher CXXConstructMatcher = varDecl(
+  has(cxxConstructExpr().bind("cxxConstructExpr")),
+  hasType(classTemplateSpecializationDecl().bind("typename"))
+).bind("varname");
+
+struct ConstructCallback : MatchFinder::MatchCallback {
+  virtual void run(const MatchFinder::MatchResult &Result) {
+    fmt::print("ConstructCallback: {}\n", Result.Nodes.getMap().size());
+    if (Result.Nodes.getNodeAs<clang::CXXConstructExpr>("cxxConstructExpr")) {
+      expr = Result.Nodes.getNodeAs<clang::CXXConstructExpr>("cxxConstructExpr");
+      found = true;
+    }
+  }
+
+  CXXConstructExpr const *expr = nullptr;
+  bool found = false;
+};
+
+DeclarationMatcher TemporaryObjectMatcher =
+  varDecl(
+    hasDescendant(cxxTemporaryObjectExpr().bind("cxxTemp"))
+  );
+
+struct TemporaryObjectCallback : MatchFinder::MatchCallback {
+  virtual void run(const MatchFinder::MatchResult &Result) {
+    fmt::print("TemporaryObjectCallback: {}\n", Result.Nodes.getMap().size());
+    if (Result.Nodes.getNodeAs<clang::CXXTemporaryObjectExpr>("cxxTemp")) {
+      expr = Result.Nodes.getNodeAs<clang::CXXTemporaryObjectExpr>("cxxTemp");
+      found = true;
+    }
+  }
+
+  CXXTemporaryObjectExpr const *expr = nullptr;
+  bool found = false;
+};
+
 
 template <typename T>
 auto getBegin(T const& t) {
@@ -161,6 +224,7 @@ struct RewriteArgument {
       arg_iter++;
     }
     auto const& policy = *arg_iter;
+    policy->dumpColor();
     QualType const& policy_type = policy->getType();
     fmt::print("policy=\"{}\"\n", policy_type.getAsString());
     if (
@@ -179,84 +243,149 @@ struct RewriteArgument {
       // advanced policy must lift to builder
       fmt::print("range is advanced policy\n");
 
-      MatchFinder temp_matcher;
-      auto tc = std::make_unique<TempCallback>();
-      temp_matcher.addMatcher(TemporaryMatcher, tc.get());
-      temp_matcher.match(*policy, *Result.Context);
+      // MatchFinder temp_matcher;
+      // auto tc = std::make_unique<TempCallback>();
+      // temp_matcher.addMatcher(TemporaryMatcher, tc.get());
+      // temp_matcher.match(*policy, *Result.Context);
 
-      if (not tc->found) {
-	fmt::print("advanced policy--not-found\n");
-        return;
-      }
+      // if (not tc->found) {
+      //   fmt::print("advanced policy--not-found\n");
 
-      policy->dumpColor();
-      int offset = 0;
-      PrintingPolicy p(LangOptions{});
-      p.SuppressTagKeyword = true;
-      //
-      // unfortunately, this doesn't exist in Clang 7-9. it's introduced a lot
-      // later in clang 13?
-      //
-      // p.SplitTemplateClosers = false;
-      //
-      auto str = policy_type.getAsString(p);
-      if (str.substr(0, 6) == "const ") {
-        str = str.substr(6, str.size()-1);
-        offset += 6;
-      }
-      if (str.substr(0, 6) == "class ") {
-        str = str.substr(6, str.size()-1);
-        offset += 6;
-      }
-      if (str.substr(0, 7) == "struct ") {
-        str = str.substr(7, str.size()-1);
-        offset += 7;
-      }
+      //   MatchFinder decl_ref_matcher;
+      //   auto dc = std::make_unique<DeclRefCallback>();
+      //   decl_ref_matcher.addMatcher(DeclRefMatcher, dc.get());
+      //   decl_ref_matcher.match(*policy, *Result.Context);
 
-      auto t = str;
-      std::string main_type = "";
-      std::string temp_type = "";
-      for (std::size_t i = 0; i < t.size(); i++) {
-        if (t[i] == '<') {
-          main_type = t.substr(0, i);
-          temp_type = t.substr(i+1, t.size()-i-2);
-          break;
-        }
-      }
+      //   if (dc->found) {
+      //     fmt::print("declRefExpr descendant found\n");
+      //     auto expr = dc->expr;
+      //     expr->dumpColor();
+      //     auto decl = expr->getDecl();
+      //     decl->dumpColor();
+      //     fmt::print("type={}\n",decl->getType().getAsString());
+      //     fmt::print("name={}\n", decl->getNameAsString());
 
-      if (main_type == "") {
-        main_type = t;
-      }
+      //     QualType type = decl->getType();
+      //     auto type_name = type.getBaseTypeIdentifier()->getName();
+      //     fmt::print("typename={}\n",type_name.str());
 
-      temp_type = replaceSpacedTemplates(temp_type);
+      //     MatchFinder cxx_matcher;
+      //     auto cc = std::make_unique<ConstructCallback>();
+      //     cxx_matcher.addMatcher(CXXConstructMatcher, cc.get());
+      //     cxx_matcher.match(*decl, *Result.Context);
 
-      while (temp_type.size() > 0 and temp_type[temp_type.size()-1] == ' ') {
-        temp_type = temp_type.substr(0, temp_type.size()-1);
-      }
+      //     fmt::print("found={} construct\n", cc->found);
 
-      fmt::print("MAIN: {}\n", main_type);
-      fmt::print("TEMP: {}\n", temp_type);
+      //     if (cc->found) {
+      //       PrintingPolicy p(LangOptions{});
+      //       p.SuppressTagKeyword = true;
+      //       replaceType(sm, type.getAsString(p), getBegin(cc->expr));
+      //     } else {
+      //       MatchFinder temp_object_matcher;
+      //       auto to = std::make_unique<TemporaryObjectCallback>();
+      //       temp_object_matcher.addMatcher(TemporaryObjectMatcher, to.get());
+      //       temp_object_matcher.match(*decl, *Result.Context);
 
-      auto begin = getBegin(policy);
-      //policy->dumpColor();
+      //       fmt::print("TO callback {}\n", to->found);
+      //       if (to->found) {
+      //         QualType totype = to->expr->getType();
+      //         PrintingPolicy p(LangOptions{});
+      //         p.SuppressTagKeyword = true;
+      //         replaceType(sm, totype.getAsString(p), getBegin(to->expr));
+      //       }
+      //     }
 
-      std::string new_type = "";
-      if (temp_type == "") {
-        new_type = fmt::format("empire::buildKokkosPolicy<{}>", main_type);
-      } else {
-        new_type = fmt::format("empire::buildKokkosPolicy<{}, {}>", main_type, temp_type);
-      }
-      fmt::print("new type={}\n", new_type);
+      //     if (isa<VarDecl>(decl)) {
+      //       auto var = cast<VarDecl>(decl);
+      //       char const* ci = sm->getCharacterData(var->getTypeSourceInfo()->getTypeLoc().getBeginLoc());
+      //       std::string first5 = std::string{ci, 5};
+      //       //fmt::print("CICI: {}\n", first5);
+      //       if (first5 != "auto ") {
+      //         rw.ReplaceText(
+      //           SourceRange{
+      //             var->getTypeSourceInfo()->getTypeLoc().getBeginLoc(),
+      //             var->getTypeSourceInfo()->getTypeLoc().getEndLoc()
+      //           },
+      //           "auto"
+      //         );
+      //       }
+      //     }
+      //   }
 
-      char const* ci = sm->getCharacterData(begin);
-      char const* c = ci;
-      while (*c != '(') {
-        c++;
-      }
-      auto end = c - ci;
+      //   return;
+      // } else {
+      //   PrintingPolicy p(LangOptions{});
+      //   p.SuppressTagKeyword = true;
+      //   replaceType(sm, policy_type.getAsString(p), getBegin(policy));
+      // }
 
-      rw.ReplaceText(begin, end, new_type);
+      // policy->dumpColor();
     }
+
+  }
+
+  template <typename T>
+  void replaceType(SourceManager const* sm, std::string str, T begin) const {
+    int offset = 0;
+    //
+    // unfortunately, this doesn't exist in Clang 7-9. it's introduced a lot
+    // later in clang 13?
+    //
+    // p.SplitTemplateClosers = false;
+    //
+    if (str.substr(0, 6) == "const ") {
+      str = str.substr(6, str.size()-1);
+      offset += 6;
+    }
+    if (str.substr(0, 6) == "class ") {
+      str = str.substr(6, str.size()-1);
+      offset += 6;
+    }
+    if (str.substr(0, 7) == "struct ") {
+      str = str.substr(7, str.size()-1);
+      offset += 7;
+    }
+
+    auto t = str;
+    std::string main_type = "";
+    std::string temp_type = "";
+    for (std::size_t i = 0; i < t.size(); i++) {
+      if (t[i] == '<') {
+        main_type = t.substr(0, i);
+        temp_type = t.substr(i+1, t.size()-i-2);
+        break;
+      }
+    }
+
+    if (main_type == "") {
+      main_type = t;
+    }
+
+    temp_type = replaceSpacedTemplates(temp_type);
+
+    while (temp_type.size() > 0 and temp_type[temp_type.size()-1] == ' ') {
+      temp_type = temp_type.substr(0, temp_type.size()-1);
+    }
+
+    fmt::print("MAIN: {}\n", main_type);
+    fmt::print("TEMP: {}\n", temp_type);
+
+    std::string new_type = "";
+    if (temp_type == "") {
+      new_type = fmt::format("empire::buildKokkosPolicy<{}>", main_type);
+    } else {
+      new_type = fmt::format("empire::buildKokkosPolicy<{}, {}>", main_type, temp_type);
+    }
+    fmt::print("new type={}\n", new_type);
+
+    char const* ci = sm->getCharacterData(begin);
+    char const* c = ci;
+    while (*c != '(' and *c != '{') {
+      c++;
+    }
+    auto end = c - ci;
+
+    rw.ReplaceText(begin, end, new_type);
   }
 
   std::string replaceSpacedTemplates(std::string in) const {
@@ -292,6 +421,10 @@ struct RewriteArgumentString {
     fmt::print("type={}\n", type.getAsString());
     if (type.getAsString() == "std::string" or
         type.getAsString() == "const std::string" or
+        type.getAsString() == "std::string const" or
+        type.getAsString() == "std::string&" or
+        type.getAsString() == "const std::string&" or
+        type.getAsString() == "const& std::string" or
         type.getAsString() == "char *" or
         type.getAsString() == "char const *" or
         type.getAsString() == "const char *") {
@@ -428,91 +561,88 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
       }
     }
 
-#if 1
-    if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr")) {
+    if (RequireStrings) {
+      if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr")) {
 
-      auto& ctx = Result.Context;
-      auto p = ctx->getParents(*ce);
-      fmt::print("size={}\n", p.size());
+        auto rr = std::make_unique<RewriteArgumentString>(rw);
+        rr->operator()(ce, Result.SourceManager, Result);
 
-      if (p.size() != 1) {
-        return;
       }
+    } else {
+      if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr")) {
 
-      ExprWithCleanups const* ewc = nullptr;
-      if (isa<ExprWithCleanups>(p[0].get<Stmt>())) {
-        //fmt::print("isa ExprWithCleanups\n");
-        ewc = cast<ExprWithCleanups>(p[0].get<Stmt>());
-        p = ctx->getParents(*ewc);
-      }
+        auto& ctx = Result.Context;
+        auto p = ctx->getParents(*ce);
+        fmt::print("size={}\n", p.size());
 
-      bool found_fence = false;
-      CallExpr const* fence = nullptr;
-      for (std::size_t i = 0; i < p.size(); i++) {
-        Stmt const* st = p[i].get<Stmt>();
-        //st->dumpColor();
-        if (isa<CompoundStmt>(st)) {
-          auto const& cs = cast<CompoundStmt>(st);
-          if (cs->size() == 1) {
-            break;
-          }
-          int x = 0;
-          for (auto iter = cs->child_begin(); iter != cs->child_end(); ++iter) {
-            x++;
-            if (x > cs->size()) {
-              goto out;
+        if (p.size() != 1) {
+          return;
+        }
+
+        ExprWithCleanups const* ewc = nullptr;
+        if (isa<ExprWithCleanups>(p[0].get<Stmt>())) {
+          //fmt::print("isa ExprWithCleanups\n");
+          ewc = cast<ExprWithCleanups>(p[0].get<Stmt>());
+          p = ctx->getParents(*ewc);
+        }
+
+        bool found_fence = false;
+        CallExpr const* fence = nullptr;
+        for (std::size_t i = 0; i < p.size(); i++) {
+          Stmt const* st = p[i].get<Stmt>();
+          //st->dumpColor();
+          if (isa<CompoundStmt>(st)) {
+            auto const& cs = cast<CompoundStmt>(st);
+            if (cs->size() == 1) {
+              break;
             }
-            if (*iter == ce or *iter == ewc) {
-              iter++;
-              if (iter != cs->child_end()) {
-                MatchFinder fence_matcher;
-                auto fc = std::make_unique<FenceCallback>();
-                fence_matcher.addMatcher(FenceMatcher, fc.get());
-                fence_matcher.match(**iter, *Result.Context);
-                found_fence = fc->found;
-                if (fc->found) {
-                  fence = cast<CallExpr>(*iter);
-                  ///fence = *iter;
-                  fmt::print("FOUND fence\n");
-                } else {
-                  fmt::print("NOT FOUND fence\n");
-                }
+            int x = 0;
+            for (auto iter = cs->child_begin(); iter != cs->child_end(); ++iter) {
+              x++;
+              if (x > cs->size()) {
+                goto out;
+              }
+              if (*iter == ce or *iter == ewc) {
+                iter++;
+                if (iter != cs->child_end()) {
+                  MatchFinder fence_matcher;
+                  auto fc = std::make_unique<FenceCallback>();
+                  fence_matcher.addMatcher(FenceMatcher, fc.get());
+                  fence_matcher.match(**iter, *Result.Context);
+                  found_fence = fc->found;
+                  if (fc->found) {
+                    fence = cast<CallExpr>(*iter);
+                    ///fence = *iter;
+                    fmt::print("FOUND fence\n");
+                  } else {
+                    fmt::print("NOT FOUND fence\n");
+                  }
 
+                }
               }
             }
           }
+
+          break;
         }
 
-        break;
-      }
+      out:
 
-    out:
+        auto rr = std::make_unique<RewriteArgument>(rw);
+        rr->operator()(ce, Result.SourceManager, Result);
 
-      auto rr = std::make_unique<RewriteArgument>(rw);
-      rr->operator()(ce, Result.SourceManager, Result);
+        if (found_fence) {
+          // rewrite to blocking with empire
+          auto rb = std::make_unique<RewriteBlocking>(rw);
+          rb->operator()(ce, fence);
+        } else {
+          // rewrite to async with empire
+          auto ra = std::make_unique<RewriteAsync>(rw);
+          ra->operator()(ce);
+        }
 
-      if (found_fence) {
-        // rewrite to blocking with empire
-        auto rb = std::make_unique<RewriteBlocking>(rw);
-        rb->operator()(ce, fence);
-      } else {
-        // rewrite to async with empire
-        auto ra = std::make_unique<RewriteAsync>(rw);
-        ra->operator()(ce);
       }
     }
-
-#else
-
-    if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr")) {
-
-      auto rr = std::make_unique<RewriteArgumentString>(rw);
-      rr->operator()(ce, Result.SourceManager, Result);
-
-    }
-
-#endif
-
   }
 
   std::set<SourceLocation> locs;
@@ -525,7 +655,11 @@ struct MyASTConsumer : ASTConsumer {
     if (DoFencesOnly) {
       matcher_.addMatcher(FenceMatcher, &call_handler_);
     } else {
-      matcher_.addMatcher(CallMatcher, &call_handler_);
+      if (RequireStrings) {
+        matcher_.addMatcher(EmpireCallMatcher, &call_handler_);
+      } else {
+        matcher_.addMatcher(CallMatcher, &call_handler_);
+      }
     }
   }
 
