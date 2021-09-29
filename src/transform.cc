@@ -96,6 +96,15 @@ StatementMatcher CallMatcher =
     )
   ).bind("callExpr");
 
+StatementMatcher DeepCopyMatcher =
+  callExpr(
+    callee(
+      functionDecl(
+        hasName("::Kokkos::deep_copy")
+      )
+    )
+  ).bind("callExpr");
+
 StatementMatcher EmpireCallMatcher =
   callExpr(
     callee(
@@ -465,7 +474,7 @@ struct RewriteBlocking {
     }
 
     // Remove the fence line
-    {
+    if (fence) {
       auto begin = getBegin(fence);
       auto end = getEnd(fence);
       typename Rewriter::RewriteOptions ro;
@@ -506,6 +515,51 @@ struct RewriteAsync {
 
 private:
   Rewriter& rw;
+};
+
+struct DeepCopyRewriter  : MatchFinder::MatchCallback {
+  explicit DeepCopyRewriter(Rewriter& in_rw)
+    : rw(in_rw)
+  { }
+
+  virtual void run(const MatchFinder::MatchResult &Result) {
+    CallExpr const* ce = Result.Nodes.getNodeAs<clang::CallExpr>("callExpr");
+
+    if (ce) {
+      auto file = rw.getSourceMgr().getFilename(getEnd(ce));
+
+      fmt::print("considering filename={}, regex={}\n", file.str(), Matcher);
+
+      std::regex re(Matcher);
+      std::cmatch m;
+      if (std::regex_match(file.str().c_str(), m, re)) {
+        fmt::print("=== Invoking rewriter on matched result in {} ===\n", file.str());
+        // we need to process this match
+      } else {
+        // break out and ignore this file
+        return;
+      }
+
+      if (processed_files.find(file.str()) != processed_files.end()) {
+        fmt::print("already generated for filename={}\n", file.str());
+        return;
+      }
+
+      new_processed_files.insert(file.str());
+
+      if (locs.find(getBegin(ce)) != locs.end()) {
+        return;
+      }
+      locs.insert(getBegin(ce));
+
+      ce->dumpColor();
+      auto rb = std::make_unique<RewriteBlocking>(rw);
+      rb->operator()(ce, nullptr);
+    }
+  }
+
+  Rewriter& rw;
+  std::set<SourceLocation> locs;
 };
 
 struct ParallelForRewriter : MatchFinder::MatchCallback {
@@ -650,7 +704,7 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
 };
 
 struct MyASTConsumer : ASTConsumer {
-  MyASTConsumer(Rewriter& in_rw) : call_handler_(in_rw) {
+  MyASTConsumer(Rewriter& in_rw) : call_handler_(in_rw), deep_copy_handler_(in_rw) {
 
     if (DoFencesOnly) {
       matcher_.addMatcher(FenceMatcher, &call_handler_);
@@ -658,6 +712,7 @@ struct MyASTConsumer : ASTConsumer {
       if (RequireStrings) {
         matcher_.addMatcher(EmpireCallMatcher, &call_handler_);
       } else {
+        matcher_.addMatcher(DeepCopyMatcher, &deep_copy_handler_);
         matcher_.addMatcher(CallMatcher, &call_handler_);
       }
     }
@@ -670,6 +725,7 @@ struct MyASTConsumer : ASTConsumer {
 
 private:
   ParallelForRewriter call_handler_;
+  DeepCopyRewriter deep_copy_handler_;
   MatchFinder matcher_;
 };
 

@@ -30,6 +30,7 @@ void parallel_for(Policy i, Func j) { }
 template <typename Policy, typename Func>
 void parallel_scan(Policy i, Func j) { }
 
+void deep_copy(int, int) {}
 
 }
 
@@ -60,6 +61,8 @@ void parallel_for_async(size_t x) { }
 void parallel_scan_async(std::string str, size_t j) { }
 void parallel_scan_async(size_t i) { }
 
+void deep_copy_blocking(int, int);
+
 void fence() { }
 
 }
@@ -73,6 +76,9 @@ void test3() {
 
   Kokkos::RangePolicy<int, float> policy{1000};
   Kokkos::parallel_for(policy, []{});
+
+  int a, b;
+  Kokkos::deep_copy(a, b);
 }
 
 void test() {
@@ -83,6 +89,8 @@ void test() {
     Kokkos::parallel_for(90, []{});
     Kokkos::fence();
     if (false) x=6;
+    int c, b;
+    Kokkos::deep_copy(c, b);
   }
 }
 
@@ -104,9 +112,12 @@ void test4() {
   Kokkos::parallel_for(Kokkos::RangePolicy< PHX::Device >(0,S_values.extent(0)),
   KOKKOS_LAMBDA (const Size& n)
   {
+    int d, e;
+    Kokkos::deep_copy(d, e);
     return n+1;
   });
   Kokkos::fence();
+
 
   using DeviceSpace = PHX::Device;
 
