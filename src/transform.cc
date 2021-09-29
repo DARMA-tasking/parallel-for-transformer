@@ -109,7 +109,10 @@ StatementMatcher EmpireCallMatcher =
   callExpr(
     callee(
       functionDecl(
-        matchesName("::empire::parallel_*") // hasName("::Kokkos::parallel_for")
+        anyOf(
+          matchesName("::empire::parallel_*"),
+          matchesName("::empire::deep_copy*")
+        )
       )
     )
   ).bind("callExpr");
