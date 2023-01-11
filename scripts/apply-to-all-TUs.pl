@@ -27,7 +27,7 @@ foreach (<$fd>) {
 
     ### command here, remove echo to run!
     print `echo $base/parallel-for-transformer-build/transform -p $base/build/compile_commands.json $_ -I /sierra/sntools/SDK/compilers/clang/9.0-RHEL7/lib/clang/9.0.1/include/ -f \.\*transform-empire\.\* -x transformed.out`;
-    # print `/ascldap/users/jliffla/parallel-for-transformer-build-new/transform -p ~/transform-empire/build-new/compile_commands.json $_ -I /sierra/sntools/SDK/compilers/clang/9.0-RHEL7/lib/clang/9.0.1/include/ -f \.\*transform-empire\.\* -x transformed.out`;
+    print `$base/parallel-for-transformer-build-new/transform -p ~/transform-empire/build-new/compile_commands.json $_ -I /sierra/sntools/SDK/compilers/clang/9.0-RHEL7/lib/clang/9.0.1/include/ -f \.\*transform-empire\.\* -x transformed.out`;
 
     $i++;
 }
