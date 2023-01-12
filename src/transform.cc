@@ -128,6 +128,15 @@ StatementMatcher FenceMatcher =
     )
   ).bind("fenceExpr");
 
+StatementMatcher FenceMatcherCleanups =
+  exprWithCleanups(callExpr(
+    callee(
+      functionDecl(
+        hasName("::Kokkos::fence")
+      )
+    )
+  ).bind("fenceExpr"));
+
 struct FenceCallback : MatchFinder::MatchCallback {
   virtual void run(const MatchFinder::MatchResult &Result) {
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("fenceExpr")) {
@@ -640,7 +649,7 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
 
         ExprWithCleanups const* ewc = nullptr;
         if (isa<ExprWithCleanups>(p[0].get<Stmt>())) {
-          //fmt::print("isa ExprWithCleanups\n");
+          fmt::print("isa ExprWithCleanups\n");
           ewc = cast<ExprWithCleanups>(p[0].get<Stmt>());
           p = ctx->getParents(*ewc);
         }
@@ -649,7 +658,7 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
         CallExpr const* fence = nullptr;
         for (std::size_t i = 0; i < p.size(); i++) {
           Stmt const* st = p[i].get<Stmt>();
-          //st->dumpColor();
+          st->dumpColor();
           if (isa<CompoundStmt>(st)) {
             auto const& cs = cast<CompoundStmt>(st);
             if (cs->size() == 1) {
@@ -674,7 +683,19 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
                     ///fence = *iter;
                     fmt::print("FOUND fence\n");
                   } else {
-                    fmt::print("NOT FOUND fence\n");
+
+                    MatchFinder fence_matcher_cleanups;
+                    auto fc = std::make_unique<FenceCallback>();
+                    fence_matcher_cleanups.addMatcher(FenceMatcherCleanups, fc.get());
+                    fence_matcher_cleanups.match(**iter, *Result.Context);
+                    found_fence = fc->found;
+
+                    if (found_fence) {
+                      fmt::print("FOUND fence cleanups\n");
+                      fence = cast<CallExpr>(*iter);
+                    } else {
+                      fmt::print("NOT FOUND fence\n");
+                    }
                   }
 
                 }
