@@ -20,7 +20,8 @@ template <typename T>
 class Schedule {};
 class Dynamic {};
 
-void fence(char const* str = nullptr) { }
+void fence(const std::string&) { }
+void fence() { }
 
 template <typename Policy, typename Func>
 void parallel_for(Policy i, Func j) { }
@@ -129,12 +130,15 @@ void test4() {
   // Kokkos::fence();
 
 
- empire::parallel_for_blocking(
+ empire::parallel_for_async(
    "parts::checkSort",
    Kokkos::RangePolicy<DeviceSpace>(0, N * N),
    KOKKOS_LAMBDA(const int i) {
    }
  );
+ {
+   Kokkos::fence();
+ }
 
 }
 

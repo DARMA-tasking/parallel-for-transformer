@@ -131,10 +131,6 @@ StatementMatcher FenceMatcher =
 
 struct FenceCallback : MatchFinder::MatchCallback {
   virtual void run(const MatchFinder::MatchResult &Result) {
-    // auto& m = Result.Nodes.getMap();
-    // for (auto&& x : m) {
-    //   fmt::print("match: {}\n", x.first);
-    // }
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("fenceExpr")) {
       out_ce = ce;
       found = true;
@@ -671,19 +667,24 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
               if (*iter == ce or *iter == ewc) {
                 iter++;
                 if (iter != cs->child_end()) {
-		  //iter->dumpColor();
-                  MatchFinder fence_matcher;
-                  auto fc = std::make_unique<FenceCallback>();
-                  fence_matcher.addMatcher(FenceMatcher, fc.get());
-                  fence_matcher.match(**iter, *Result.Context);
-                  found_fence = fc->found;
-                  if (fc->found) {
-                    fence = fc->out_ce;
-                    fmt::print("FOUND fence\n");
+                  if (isa<WhileStmt>(*iter) or isa<IfStmt>(*iter) or isa<CompoundStmt>(*iter) or isa<ForStmt>(*iter) or isa<CXXForRangeStmt>(*iter)) {
+                    iter->dumpColor();
+                    fmt::print("Not traversing stmt after\n");
                   } else {
-		    fmt::print("NOT FOUND fence\n");
+                    //iter->dumpColor();
+                    MatchFinder fence_matcher;
+                    auto fc = std::make_unique<FenceCallback>();
+                    fence_matcher.addMatcher(FenceMatcher, fc.get());
+                    fence_matcher.match(**iter, *Result.Context);
+                    found_fence = fc->found;
+                    iter->dumpColor();
+                    if (fc->found) {
+                      fence = fc->out_ce;
+                      fmt::print("FOUND fence\n");
+                    } else {
+                      fmt::print("NOT FOUND fence\n");
+                    }
                   }
-
                 }
               }
             }
