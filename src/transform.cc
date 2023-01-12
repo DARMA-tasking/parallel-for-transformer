@@ -120,16 +120,7 @@ StatementMatcher EmpireCallMatcher =
   ).bind("callExpr");
 
 StatementMatcher FenceMatcher =
-  callExpr(
-    callee(
-      functionDecl(
-        hasName("::Kokkos::fence")
-      )
-    )
-  ).bind("fenceExpr");
-
-StatementMatcher FenceMatcherCleanups =
-  exprWithCleanups(callExpr(
+  hasDescendant(callExpr(
     callee(
       functionDecl(
         hasName("::Kokkos::fence")
@@ -137,13 +128,20 @@ StatementMatcher FenceMatcherCleanups =
     )
   ).bind("fenceExpr"));
 
+
 struct FenceCallback : MatchFinder::MatchCallback {
   virtual void run(const MatchFinder::MatchResult &Result) {
+    // auto& m = Result.Nodes.getMap();
+    // for (auto&& x : m) {
+    //   fmt::print("match: {}\n", x.first);
+    // }
     if (CallExpr const *ce = Result.Nodes.getNodeAs<clang::CallExpr>("fenceExpr")) {
+      out_ce = ce;
       found = true;
     }
   }
   bool found = false;
+  CallExpr const *out_ce = nullptr;
 };
 
 StatementMatcher TemporaryMatcher = cxxTemporaryObjectExpr().bind("tempExpr");
@@ -658,7 +656,7 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
         CallExpr const* fence = nullptr;
         for (std::size_t i = 0; i < p.size(); i++) {
           Stmt const* st = p[i].get<Stmt>();
-          st->dumpColor();
+          //st->dumpColor();
           if (isa<CompoundStmt>(st)) {
             auto const& cs = cast<CompoundStmt>(st);
             if (cs->size() == 1) {
@@ -673,29 +671,17 @@ struct ParallelForRewriter : MatchFinder::MatchCallback {
               if (*iter == ce or *iter == ewc) {
                 iter++;
                 if (iter != cs->child_end()) {
+		  //iter->dumpColor();
                   MatchFinder fence_matcher;
                   auto fc = std::make_unique<FenceCallback>();
                   fence_matcher.addMatcher(FenceMatcher, fc.get());
                   fence_matcher.match(**iter, *Result.Context);
                   found_fence = fc->found;
                   if (fc->found) {
-                    fence = cast<CallExpr>(*iter);
-                    ///fence = *iter;
+                    fence = fc->out_ce;
                     fmt::print("FOUND fence\n");
                   } else {
-
-                    MatchFinder fence_matcher_cleanups;
-                    auto fc = std::make_unique<FenceCallback>();
-                    fence_matcher_cleanups.addMatcher(FenceMatcherCleanups, fc.get());
-                    fence_matcher_cleanups.match(**iter, *Result.Context);
-                    found_fence = fc->found;
-
-                    if (found_fence) {
-                      fmt::print("FOUND fence cleanups\n");
-                      fence = cast<CallExpr>(*iter);
-                    } else {
-                      fmt::print("NOT FOUND fence\n");
-                    }
+		    fmt::print("NOT FOUND fence\n");
                   }
 
                 }
