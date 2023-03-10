@@ -448,7 +448,49 @@ struct RewriteArgumentString {
       fmt::print("first argument is string\n");
       return;
     } else {
-      rw.InsertTextBefore(getBegin(first_arg), "\"PLEASE-ADD\", ");
+
+      FunctionDecl const* out_func = nullptr;
+      RecordDecl const* out_record = nullptr;
+
+      auto NodeList = Result.Context->getParents(*par);
+      while (!NodeList.empty()) {
+        // Get the first parent.
+        auto ParentNode = NodeList[0];
+
+        // Is the parent a FunctionDecl?
+        if (const FunctionDecl *Parent = ParentNode.get<FunctionDecl>()) {
+          llvm::outs() << "Found ancestor FunctionDecl: "
+                       << (void const*)Parent << '\n';
+          llvm::outs() << "FunctionDecl name: "
+                       << Parent->getNameAsString() << '\n';
+          out_func = Parent;
+        }
+
+        if (const RecordDecl *Parent = ParentNode.get<RecordDecl>()) {
+          llvm::outs() << "Found ancestor RecordDecl: "
+                       << (void const*)Parent << '\n';
+          llvm::outs() << "RecordDecl name: "
+                       << Parent->getNameAsString() << '\n';
+          out_record = Parent;
+          break;
+        }
+
+        // It was not a FunctionDecl.  Keep going up.
+        NodeList = Result.Context->getParents(ParentNode);
+      }
+
+      std::string label;
+      if (out_record != nullptr) {
+        label += out_record->getNameAsString();
+      }
+      if (out_func != nullptr) {
+        label += "::" + out_func->getNameAsString();
+      }
+      if (out_record == nullptr and out_func == nullptr) {
+        label += "PLEASE-ADD";
+      }
+
+      rw.InsertTextBefore(getBegin(first_arg), "\"" + label + "\", ");
     }
   }
 
@@ -723,7 +765,7 @@ struct MyASTConsumer : ASTConsumer {
       matcher_.addMatcher(FenceMatcher, &call_handler_);
     } else {
       if (RequireStrings) {
-        matcher_.addMatcher(EmpireCallMatcher, &call_handler_);
+        matcher_.addMatcher(CallMatcher, &call_handler_);
       } else if (DeepCopy) {
         matcher_.addMatcher(DeepCopyMatcher, &deep_copy_handler_);
       } else {
