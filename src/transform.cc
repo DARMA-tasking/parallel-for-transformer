@@ -452,31 +452,44 @@ struct RewriteArgumentString {
       FunctionDecl const* out_func = nullptr;
       RecordDecl const* out_record = nullptr;
 
-      auto NodeList = Result.Context->getParents(*par);
-      while (!NodeList.empty()) {
-        // Get the first parent.
-        auto ParentNode = NodeList[0];
+      {
+        auto NodeList = Result.Context->getParents(*par);
+        while (!NodeList.empty()) {
+          // Get the first parent.
+          auto ParentNode = NodeList[0];
 
-        // Is the parent a FunctionDecl?
-        if (const FunctionDecl *Parent = ParentNode.get<FunctionDecl>()) {
-          llvm::outs() << "Found ancestor FunctionDecl: "
-                       << (void const*)Parent << '\n';
-          llvm::outs() << "FunctionDecl name: "
-                       << Parent->getNameAsString() << '\n';
-          out_func = Parent;
+          // Is the parent a FunctionDecl?
+          if (const FunctionDecl *Parent = ParentNode.get<FunctionDecl>()) {
+            llvm::outs() << "Found ancestor FunctionDecl: "
+                         << (void const*)Parent << '\n';
+            llvm::outs() << "FunctionDecl name: "
+                         << Parent->getNameAsString() << '\n';
+            out_func = Parent;
+            break;
+          }
+
+          // It was not a FunctionDecl.  Keep going up.
+          NodeList = Result.Context->getParents(ParentNode);
         }
+      }
 
-        if (const RecordDecl *Parent = ParentNode.get<RecordDecl>()) {
-          llvm::outs() << "Found ancestor RecordDecl: "
-                       << (void const*)Parent << '\n';
-          llvm::outs() << "RecordDecl name: "
-                       << Parent->getNameAsString() << '\n';
-          out_record = Parent;
-          break;
+      if (out_func) {
+        auto NodeList = Result.Context->getParents(*out_func->getCanonicalDecl());
+        while (!NodeList.empty()) {
+          // Get the first parent.
+          auto ParentNode = NodeList[0];
+
+
+          if (const RecordDecl *Parent = ParentNode.get<RecordDecl>()) {
+            llvm::outs() << "Found ancestor RecordDecl: "
+                         << (void const*)Parent << '\n';
+            llvm::outs() << "RecordDecl name: "
+                         << Parent->getNameAsString() << '\n';
+            out_record = Parent;
+            break;
+          }
+          NodeList = Result.Context->getParents(ParentNode);
         }
-
-        // It was not a FunctionDecl.  Keep going up.
-        NodeList = Result.Context->getParents(ParentNode);
       }
 
       std::string label;
